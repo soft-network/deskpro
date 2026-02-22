@@ -143,3 +143,20 @@ ADMIN_API_KEY = config("ADMIN_API_KEY")
 SAAS_ADMIN_EMAIL = config("SAAS_ADMIN_EMAIL", default="admin@deskpro.dev")
 SAAS_ADMIN_PASSWORD = config("SAAS_ADMIN_PASSWORD")
 SAAS_ADMIN_FULL_NAME = config("SAAS_ADMIN_FULL_NAME", default="")
+
+# ---------------------------------------------------------------------------
+# Tenant Provisioning Mode
+# ---------------------------------------------------------------------------
+# TENANT_DEV_MODE=True  → skip Neon API on signup; use a single fixed dev DB
+# TENANT_DEV_MODE=False → prod path: call NeonClient.create_database() per tenant
+TENANT_DEV_MODE = config("TENANT_DEV_MODE", default=False, cast=bool)
+
+# Fixed dev DB credentials (only used when TENANT_DEV_MODE=True).
+# In prod these keys are absent from .env.prod; defaults keep startup safe.
+DEV_TENANT_DB = {
+    "NAME": config("DEV_TENANT_DB_NAME", default="softflow_tenant_dev"),
+    "USER": config("DEV_TENANT_DB_USER", default="neondb_owner"),
+    "PASSWORD": config("DEV_TENANT_DB_PASSWORD", default=""),
+    "HOST": config("DEV_TENANT_DB_HOST", default=""),
+    "PORT": config("DEV_TENANT_DB_PORT", default="5432"),
+}

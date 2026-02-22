@@ -4,7 +4,7 @@ TenantDatabaseRouter — routes ORM queries to the correct Neon DB.
 Control-plane apps (tenants, admin, auth, contenttypes, sessions) always
 use the 'default' (Control Plane) DB.
 
-All other apps (accounts, tickets) are routed to the tenant DB alias
+All other apps (tenant related apps) are routed to the tenant DB alias
 stored in thread-local storage for the current request.
 """
 from django.conf import settings

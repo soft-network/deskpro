@@ -28,14 +28,16 @@ def signup(request, payload: TenantSignupIn):
     Create a new tenant:
       1. Validate slug uniqueness
       2. Reserve Tenant record (is_active=False)
-      3. Provision Neon DB
-      4. Register DB + run migrations
-      5. Create first admin Agent
-      6. Activate tenant
+      3. Provision DB
+           Dev  (TENANT_DEV_MODE=True)  → use fixed softflow_tenant_dev, no Neon API call
+           Prod (TENANT_DEV_MODE=False) → call NeonClient.create_database()
+      4. Persist credentials + register DB alias
+      5. Apply template schema (Django migrations) to tenant DB
+      6. Create first admin Agent
+      7. Activate tenant
     """
     # 1. Slug uniqueness
     if Tenant.objects.using("default").filter(slug=payload.slug).exists():
-        from ninja.errors import HttpError
         raise HttpError(409, f"Slug '{payload.slug}' is already taken.")
 
     tenant = None
@@ -48,10 +50,18 @@ def signup(request, payload: TenantSignupIn):
             is_active=False,
         )
 
-        # 3. Provision Neon DB
-        db_name = f"tenant_{payload.slug}"
-        client = NeonClient()
-        creds = client.create_database(db_name)
+        # 3. Provision DB — dev uses fixed credentials, prod calls Neon API
+        if settings.TENANT_DEV_MODE:
+            creds = _get_dev_tenant_db_creds()
+            logger.info(
+                "[DEV] Using fixed dev DB '%s' for tenant '%s' (no Neon API call).",
+                creds.database_name,
+                payload.slug,
+            )
+        else:
+            db_name = f"tenant_{payload.slug}"
+            client = NeonClient()
+            creds = client.create_database(db_name)
 
         # 4. Persist credentials
         tenant.neon_database_name = creds.database_name
@@ -61,11 +71,13 @@ def signup(request, payload: TenantSignupIn):
         tenant.neon_db_port = creds.port
         tenant.save(using="default")
 
-        # Register DB so Django can use it immediately
+        # Register DB alias so Django can route queries immediately
         register_tenant_db(tenant)
         db_alias = tenant.get_db_alias()
 
-        # 5. Run migrations on the new tenant DB
+        # 5. Apply template schema: run Django migrations on the tenant DB.
+        #    The migration files (accounts + tickets) define the canonical
+        #    tenant schema — applying them IS the template-schema step.
         _run_tenant_migrations(db_alias)
 
         # 6. Create the first admin Agent
@@ -85,13 +97,12 @@ def signup(request, payload: TenantSignupIn):
 
     except Exception as exc:
         logger.error("Tenant provisioning failed for '%s': %s", payload.slug, exc)
-        # Rollback: delete reserved record so slug is freed
+        # Rollback: free the slug so the client can retry
         if tenant is not None:
             try:
                 tenant.delete(using="default")
             except Exception:
                 pass
-        from ninja.errors import HttpError
         raise HttpError(500, f"Provisioning failed: {exc}") from exc
 
     return TenantSignupOut(
@@ -118,13 +129,16 @@ def delete_tenant(request, slug: str):
 
     db_alias = tenant.get_db_alias()
 
-    # 1. Delete Neon DB
-    try:
-        client = NeonClient()
-        client.delete_database(tenant.neon_database_name)
-        logger.info("Deleted Neon DB for tenant '%s'", slug)
-    except Exception as exc:
-        logger.warning("Could not delete Neon DB for '%s': %s", slug, exc)
+    # 1. Delete Neon DB — skip in dev mode (shared fixed DB must not be dropped)
+    if settings.TENANT_DEV_MODE:
+        logger.info("[DEV] Skipping Neon DB deletion for tenant '%s' (dev mode).", slug)
+    else:
+        try:
+            client = NeonClient()
+            client.delete_database(tenant.neon_database_name)
+            logger.info("Deleted Neon DB for tenant '%s'", slug)
+        except Exception as exc:
+            logger.warning("Could not delete Neon DB for '%s': %s", slug, exc)
 
     # 2. Unregister from settings.DATABASES
     if db_alias in settings.DATABASES:
@@ -139,9 +153,37 @@ def delete_tenant(request, slug: str):
     return TenantDeleteOut(slug=slug, message=f"Tenant '{slug}' deleted successfully.")
 
 
+def _get_dev_tenant_db_creds():
+    """
+    Return fixed dev DB credentials from settings (no Neon API call).
+
+    In dev mode all tenants share a single pre-existing Neon database
+    (softflow_tenant_dev). Each tenant gets a distinct Django DB alias
+    (tenant_<slug>) but they all point to the same physical database —
+    which is fine for local development where only one tenant is active
+    at a time.
+    """
+    from core.neon_client import TenantDBCredentials
+
+    dev = settings.DEV_TENANT_DB
+    return TenantDBCredentials(
+        host=dev["HOST"],
+        user=dev["USER"],
+        password=dev["PASSWORD"],
+        database_name=dev["NAME"],
+        port=int(dev["PORT"]),
+    )
+
+
 def _run_tenant_migrations(db_alias: str) -> None:
-    """Run Django migrations for tenant apps on the given DB alias."""
-    # accounts and tickets are the tenant-scoped apps
+    """
+    Apply the tenant template schema to the given DB alias.
+
+    Django migrations for the tenant-scoped apps (accounts, tickets) define
+    the canonical schema. Running them here is the "apply template schema"
+    step — idempotent, so safe to run against the shared dev DB on every
+    signup.
+    """
     call_command("migrate", "--database", db_alias, verbosity=0)
 
 
