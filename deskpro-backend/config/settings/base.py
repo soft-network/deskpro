@@ -22,7 +22,11 @@ DEBUG = False
 
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
 
-# Application definition
+# ---------------------------------------------------------------------------
+# Installed Apps
+# ---------------------------------------------------------------------------
+
+# Django built-ins — framework infrastructure, always on 'default' DB
 DJANGO_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -33,19 +37,27 @@ DJANGO_APPS = [
     "django.contrib.postgres",
 ]
 
+# Third-party packages
 THIRD_PARTY_APPS = [
     "corsheaders",
     "ninja",
 ]
 
-LOCAL_APPS = [
-    "management.authentication.centralusers",      # first — defines AUTH_USER_MODEL
-    "management.tenants",
-    "management.authentication.tenantusers",
-    "apps.tickets",
+# Control-plane apps — shared, live on the central 'default' DB
+# Migrations run only on 'default' (see TenantDatabaseRouter.allow_migrate)
+CONTROL_PLANE_APPS = [
+    "management.authentication.centralusers",   # SaasAdmin — must be first (defines AUTH_USER_MODEL)
+    "management.tenants",                        # Tenant registry + provisioning API
 ]
 
-INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
+# Tenant-scoped apps — isolated, each tenant gets its own DB
+# Migrations run only on 'tenant_*' aliases (see TenantDatabaseRouter.allow_migrate)
+TENANT_SCOPED_APPS = [
+    "management.authentication.tenantusers",    # Agent (per-tenant user accounts)
+    "apps.tickets",                              # Helpdesk tickets + messages
+]
+
+INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + CONTROL_PLANE_APPS + TENANT_SCOPED_APPS
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
@@ -138,6 +150,10 @@ NEON_ROLE_NAME = config("NEON_ROLE_NAME", default="neondb_owner")
 
 # Admin API key — protects internal management endpoints (e.g. DELETE /api/tenants/{slug})
 ADMIN_API_KEY = config("ADMIN_API_KEY")
+
+# Field-level encryption key for sensitive DB columns (e.g. Tenant.neon_db_password).
+# Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+FIELD_ENCRYPTION_KEY = config("FIELD_ENCRYPTION_KEY")
 
 # SaaS Admin superuser — used by the create_saas_admin management command
 SAAS_ADMIN_EMAIL = config("SAAS_ADMIN_EMAIL", default="admin@deskpro.dev")

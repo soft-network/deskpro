@@ -12,7 +12,7 @@ from ninja import Router
 from ninja.errors import HttpError
 
 from management.tenants.auth import AdminKeyAuth
-from management.tenants.models import Tenant
+from management.tenants.models import Tenant, TenantMember
 from management.tenants.schemas import TenantSignupIn, TenantSignupOut, TenantDeleteOut
 from core.db_router import register_tenant_db
 from core.neon_client import NeonClient
@@ -80,13 +80,22 @@ def signup(request, payload: TenantSignupIn):
         #    tenant schema — applying them IS the template-schema step.
         _run_tenant_migrations(db_alias)
 
-        # 6. Create the first admin Agent
+        # 6. Create the first admin Agent on the tenant DB
         _create_admin_agent(
             db_alias=db_alias,
             tenant_slug=payload.slug,
             email=payload.admin_email,
             password=payload.admin_password,
             full_name=payload.admin_full_name,
+        )
+
+        # 6b. Mirror the admin in the control-plane TenantMember directory
+        #     (no password stored — directory record only)
+        _sync_tenant_member(
+            tenant=tenant,
+            email=payload.admin_email,
+            full_name=payload.admin_full_name,
+            role=TenantMember.ROLE_ADMIN,
         )
 
         # 7. Activate
@@ -151,6 +160,20 @@ def delete_tenant(request, slug: str):
     logger.info("Tenant '%s' deleted from control plane.", slug)
 
     return TenantDeleteOut(slug=slug, message=f"Tenant '{slug}' deleted successfully.")
+
+
+def _sync_tenant_member(tenant: Tenant, email: str, full_name: str, role: str) -> None:
+    """
+    Mirror an Agent into the control-plane TenantMember directory.
+
+    Called after every agent creation so SaaS admins can see all users
+    across all tenants in one place. No password is stored here.
+    """
+    TenantMember.objects.using("default").update_or_create(
+        tenant=tenant,
+        email=email,
+        defaults={"full_name": full_name, "role": role},
+    )
 
 
 def _get_dev_tenant_db_creds():
