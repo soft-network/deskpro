@@ -1,0 +1,96 @@
+version: "3"
+
+vars:
+  BACKEND: C:/Users/msi/Desktop/project/deskpro-backend
+  FRONTEND: C:/Users/msi/Desktop/project/Frontend/frontendnext
+
+tasks:
+
+  # ---------------------------------------------------------------------------
+  # Entwicklung
+  # ---------------------------------------------------------------------------
+
+  dev:
+    desc: "Backend + Frontend gleichzeitig starten"
+    cmd: concurrently --names "backend,frontend" --prefix-colors "blue,green" --kill-others-on-fail
+      "task dev:backend"
+      "task dev:frontend"
+
+  dev:backend:
+    desc: "Nur Django Dev-Server starten (Port 8000)"
+    dir: "{{.BACKEND}}"
+    cmd: "venv/Scripts/python.exe manage.py runserver"
+
+  dev:frontend:
+    desc: "Nur Next.js Dev-Server starten (Port 3000)"
+    dir: "{{.FRONTEND}}"
+    cmd: npm run dev
+
+  # ---------------------------------------------------------------------------
+  # Datenbank
+  # ---------------------------------------------------------------------------
+
+  migrate:
+    desc: "Migrations auf der Control-Plane DB ausfuehren"
+    dir: "{{.BACKEND}}"
+    cmd: "venv/Scripts/python.exe manage.py migrate"
+
+  migrate:tenants:
+    desc: "Migrations auf allen aktiven Tenant-DBs ausfuehren"
+    dir: "{{.BACKEND}}"
+    cmd: "venv/Scripts/python.exe scripts/migrate_all_tenants.py"
+
+  makemigrations:
+    desc: "Neue Migration-Dateien erstellen"
+    dir: "{{.BACKEND}}"
+    cmd: "venv/Scripts/python.exe manage.py makemigrations"
+
+  # ---------------------------------------------------------------------------
+  # Tenant-Verwaltung
+  # ---------------------------------------------------------------------------
+
+  tenant:create:
+    desc: "Neuen Tenant anlegen (Aufruf: task tenant:create SLUG=meinefirma)"
+    dir: "{{.BACKEND}}"
+    cmd: "venv/Scripts/python.exe scripts/create_tenant_schema.py {{.SLUG}}"
+    requires:
+      vars: [SLUG]
+
+  saas-admin:create:
+    desc: "SaaS Superuser erstellen / aktualisieren (liest aus .env.dev)"
+    dir: "{{.BACKEND}}"
+    cmd: "venv/Scripts/python.exe manage.py create_saas_admin"
+
+  # ---------------------------------------------------------------------------
+  # Code-Qualitaet
+  # ---------------------------------------------------------------------------
+
+  lint:backend:
+    desc: "Python Linting"
+    dir: "{{.BACKEND}}"
+    cmd: "venv/Scripts/python.exe -m flake8 apps core config --max-line-length 100"
+
+  lint:frontend:
+    desc: "Next.js Linting (eslint)"
+    dir: "{{.FRONTEND}}"
+    cmd: npm run lint
+
+  # ---------------------------------------------------------------------------
+  # Installation / Setup
+  # ---------------------------------------------------------------------------
+
+  install:backend:
+    desc: "Python Abhaengigkeiten installieren"
+    dir: "{{.BACKEND}}"
+    cmd: "venv/Scripts/python.exe -m pip install -r requirements.txt"
+
+  install:frontend:
+    desc: "Node Abhaengigkeiten installieren"
+    dir: "{{.FRONTEND}}"
+    cmd: npm install
+
+  install:
+    desc: "Alle Abhaengigkeiten installieren (Backend + Frontend)"
+    cmds:
+      - task: install:backend
+      - task: install:frontend

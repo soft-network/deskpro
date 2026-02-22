@@ -1,0 +1,12 @@
+{
+  "name": "deskpro",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently --names \"backend,frontend\" --prefix-colors \"blue,green\" --kill-others-on-fail \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd deskpro-backend && venv\\Scripts\\python.exe manage.py runserver",
+    "dev:frontend": "cd Frontend\\frontendnext && npm run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
