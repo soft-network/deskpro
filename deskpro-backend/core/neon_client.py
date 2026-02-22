@@ -143,7 +143,7 @@ class NeonClient:
         return result
 
     def list_databases(self) -> list[dict]:
-        """List all databases on the primary branch (for debugging)."""
+        """ (for debugging)."""
         branch_id = self._get_primary_branch_id()
         data = self._get(
             f"/projects/{self.project_id}/branches/{branch_id}/databases"
