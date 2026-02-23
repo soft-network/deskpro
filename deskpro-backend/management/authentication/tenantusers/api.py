@@ -25,7 +25,7 @@ _COOKIE = dict(httponly=True, samesite="Lax", path="/")
 @router.post("/login", auth=None)
 def login(request, payload: LoginIn):
     """
-    Authenticate an Agent and return user info.
+    Authenticate a TenantUser and return user info.
     Access and refresh JWTs are stored in httpOnly cookies (not in the response body).
     """
     from django.conf import settings
@@ -38,24 +38,24 @@ def login(request, payload: LoginIn):
     if db_alias not in settings.DATABASES:
         raise HttpError(404, f"Tenant '{payload.tenant_slug}' not found.")
 
-    from management.authentication.tenantusers.models import Agent
+    from management.authentication.tenantusers.models import TenantUser
 
     try:
-        agent = Agent.objects.using(db_alias).get(email=payload.email)
-    except Agent.DoesNotExist:
+        user = TenantUser.objects.using(db_alias).get(email=payload.email)
+    except TenantUser.DoesNotExist:
         raise HttpError(401, "Invalid credentials.")
 
-    if not agent.check_password(payload.password):
+    if not user.check_password(payload.password):
         raise HttpError(401, "Invalid credentials.")
 
-    if not agent.is_active:
+    if not user.is_active:
         raise HttpError(403, "Account is inactive.")
 
-    refresh = TenantRefreshToken.for_agent(agent)
+    refresh = TenantRefreshToken.for_user(user)
     access = refresh.access_token
 
     response = HttpResponse(
-        json.dumps({"email": agent.email, "full_name": agent.full_name}),
+        json.dumps({"email": user.email, "full_name": user.full_name}),
         content_type="application/json",
         status=200,
     )

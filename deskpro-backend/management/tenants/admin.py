@@ -84,6 +84,16 @@ class TenantAdmin(admin.ModelAdmin):
             return TenantCreationForm
         return super().get_form(request, obj, **kwargs)
 
+    def get_fields(self, request, obj=None):
+        if obj is None:
+            return ("name", "slug", "admin_email", "admin_full_name", "admin_password")
+        return super().get_fields(request, obj)
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj is None:
+            return ()
+        return self.readonly_fields
+
     def save_model(self, request, obj: Tenant, form, change: bool) -> None:
         if not change:
             # New tenant: run full provisioning after the initial save
@@ -147,10 +157,8 @@ class TenantMemberAdmin(admin.ModelAdmin):
 # ---------------------------------------------------------------------------
 
 def _cleanup_tenant(tenant: Tenant) -> None:
-    """Delete Neon DB (prod only) and unregister from settings.DATABASES."""
-    if settings.TENANT_DEV_MODE:
-        logger.info("[DEV] Skipping Neon DB deletion for '%s' (dev mode).", tenant.slug)
-    elif tenant.neon_database_name:
+    """Delete Neon DB and unregister from settings.DATABASES."""
+    if tenant.neon_database_name:
         try:
             NeonClient().delete_database(tenant.neon_database_name)
             logger.info("Deleted Neon DB '%s'", tenant.neon_database_name)

@@ -2,7 +2,7 @@
 Tenant provisioning logic — shared between the REST API and Django Admin.
 
 provision_tenant() is the single entry point for steps 3-9 of tenant setup:
-  3. Resolve DB credentials (dev: fixed DB, prod: new Neon database)
+  3. Create a dedicated Neon database for the tenant
   4. Persist credentials on the Tenant record
   5. Register DB alias in settings.DATABASES
   6. Apply template schema (Django migrations)
@@ -12,7 +12,6 @@ provision_tenant() is the single entry point for steps 3-9 of tenant setup:
 """
 import logging
 
-from django.conf import settings
 from django.core.management import call_command
 
 from core.db_router import register_tenant_db
@@ -29,16 +28,8 @@ def provision_tenant(tenant: Tenant, admin_password: str, admin_full_name: str) 
     Caller is responsible for rolling back (deleting the Tenant record)
     if this function raises.
     """
-    # 3. Resolve DB credentials
-    if settings.TENANT_DEV_MODE:
-        creds = _get_dev_tenant_db_creds()
-        logger.info(
-            "[DEV] Using fixed dev DB '%s' for tenant '%s' (no Neon API call).",
-            creds.database_name,
-            tenant.slug,
-        )
-    else:
-        creds = NeonClient().create_database(f"tenant_{tenant.slug}")
+    # 3. Create a dedicated Neon database for this tenant
+    creds = NeonClient().create_database(f"tenant_{tenant.slug}")
 
     # 4. Persist credentials
     tenant.neon_database_name = creds.database_name
@@ -55,7 +46,7 @@ def provision_tenant(tenant: Tenant, admin_password: str, admin_full_name: str) 
     # 6. Apply template schema
     _run_tenant_migrations(db_alias)
 
-    # 7. Create first admin Agent on tenant DB
+    # 7. Create first admin TenantUser on tenant DB
     _create_admin_agent(
         db_alias=db_alias,
         tenant_slug=tenant.slug,
@@ -83,20 +74,6 @@ def provision_tenant(tenant: Tenant, admin_password: str, admin_full_name: str) 
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _get_dev_tenant_db_creds():
-    """Return fixed dev DB credentials from settings (no Neon API call)."""
-    from core.neon_client import TenantDBCredentials
-
-    dev = settings.DEV_TENANT_DB
-    return TenantDBCredentials(
-        host=dev["HOST"],
-        user=dev["USER"],
-        password=dev["PASSWORD"],
-        database_name=dev["NAME"],
-        port=int(dev["PORT"]),
-    )
-
-
 def _run_tenant_migrations(db_alias: str) -> None:
     """
     Apply the tenant template schema to the given DB alias.
@@ -115,21 +92,21 @@ def _create_admin_agent(
     password: str,
     full_name: str,
 ) -> None:
-    """Create the first admin Agent on the tenant DB."""
-    from management.authentication.tenantusers.models import Agent
+    """Create the first admin TenantUser on the tenant DB."""
+    from management.authentication.tenantusers.models import TenantUser
     from core.thread_local import set_current_tenant_db, clear_current_tenant_db
 
     set_current_tenant_db(db_alias)
     try:
-        agent = Agent(
+        user = TenantUser(
             email=email,
             tenant_slug=tenant_slug,
-            is_staff=True,
+            is_admin=True,
             is_active=True,
             full_name=full_name,
         )
-        agent.set_password(password)
-        agent.save(using=db_alias)
+        user.set_password(password)
+        user.save(using=db_alias)
     finally:
         clear_current_tenant_db()
 

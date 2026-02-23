@@ -27,7 +27,7 @@ class Migration(migrations.Migration):
                 "app_label": "accounts",
             },
             managers=[
-                ("objects", management.authentication.tenantusers.models.AgentManager()),
+                ("objects", management.authentication.tenantusers.models.TenantUserManager()),
             ],
         ),
     ]

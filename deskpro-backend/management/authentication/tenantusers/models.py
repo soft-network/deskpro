@@ -1,14 +1,16 @@
 """
-Agent model — custom AbstractBaseUser that lives on Tenant DBs.
+TenantUser model — custom AbstractBaseUser that lives on Tenant DBs.
 
 The USERNAME_FIELD is email. tenant_slug is stored denormalized so
-a JWT payload can be fully reconstructed from the Agent record alone.
+a JWT payload can be fully reconstructed from the TenantUser record alone.
+
+is_admin means "tenant admin" (not Django admin access).
 """
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.db import models
 
 
-class AgentManager(BaseUserManager):
+class TenantUserManager(BaseUserManager):
     def create_user(self, email: str, password: str | None = None, **extra):
         if not email:
             raise ValueError("Email is required.")
@@ -19,15 +21,15 @@ class AgentManager(BaseUserManager):
         return user
 
 
-class Agent(AbstractBaseUser):
+class TenantUser(AbstractBaseUser):
     email = models.EmailField(unique=True)
     full_name = models.CharField(max_length=255, blank=True)
     tenant_slug = models.CharField(max_length=50)
-    is_staff = models.BooleanField(default=False)
+    is_admin = models.BooleanField(default=False)   # True = tenant admin role
     is_active = models.BooleanField(default=True)
     date_joined = models.DateTimeField(auto_now_add=True)
 
-    objects = AgentManager()
+    objects = TenantUserManager()
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["tenant_slug"]
@@ -39,7 +41,7 @@ class Agent(AbstractBaseUser):
         return f"{self.email} ({self.tenant_slug})"
 
     def has_perm(self, perm, obj=None):
-        return self.is_staff
+        return self.is_admin
 
     def has_module_perms(self, app_label):
-        return self.is_staff
+        return self.is_admin

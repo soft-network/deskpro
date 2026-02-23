@@ -67,7 +67,7 @@ def delete_tenant(request, slug: str):
     """
     Delete a tenant:
       1. Look up the tenant record
-      2. Delete the Neon database (skipped in dev mode)
+      2. Delete the Neon database
       3. Remove from settings.DATABASES
       4. Delete the control-plane Tenant record
     """
@@ -78,15 +78,11 @@ def delete_tenant(request, slug: str):
 
     db_alias = tenant.get_db_alias()
 
-    # Skip Neon deletion in dev mode (shared fixed DB must not be dropped)
-    if settings.TENANT_DEV_MODE:
-        logger.info("[DEV] Skipping Neon DB deletion for tenant '%s' (dev mode).", slug)
-    else:
-        try:
-            NeonClient().delete_database(tenant.neon_database_name)
-            logger.info("Deleted Neon DB for tenant '%s'", slug)
-        except Exception as exc:
-            logger.warning("Could not delete Neon DB for '%s': %s", slug, exc)
+    try:
+        NeonClient().delete_database(tenant.neon_database_name)
+        logger.info("Deleted Neon DB for tenant '%s'", slug)
+    except Exception as exc:
+        logger.warning("Could not delete Neon DB for '%s': %s", slug, exc)
 
     if db_alias in settings.DATABASES:
         del settings.DATABASES[db_alias]
