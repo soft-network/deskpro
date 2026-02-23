@@ -1,11 +1,14 @@
+import { cookies } from "next/headers";
+import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { ArrowLeft, Mail, MessageCircle, Phone, Share2 } from "lucide-react";
-import { getTicketById } from "@/lib/api";
 import { StatusBadge, PriorityBadge } from "@/components/status-badge";
 import { TicketSidebar } from "@/components/ticket-sidebar";
 import { ReplyEditor } from "@/components/reply-editor";
-import { TicketChannel } from "@/types/ticket";
+import { Ticket, TicketChannel } from "@/types/ticket";
+
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
 
 const channelIcons: Record<TicketChannel, React.ReactNode> = {
   email: <Mail className="h-4 w-4" />,
@@ -14,17 +17,32 @@ const channelIcons: Record<TicketChannel, React.ReactNode> = {
   social: <Share2 className="h-4 w-4" />,
 };
 
+async function fetchTicket(id: number): Promise<Ticket | null> {
+  // Forward the browser's auth cookies so Django's TenantMiddleware
+  // can resolve the tenant context and validate the JWT.
+  const cookieStore = await cookies();
+  const res = await fetch(`${API_BASE}/tickets/${id}`, {
+    headers: { Cookie: cookieStore.toString() },
+    cache: "no-store",
+  });
+
+  if (res.status === 401) return null;   // unauthenticated → redirect to login
+  if (res.status === 404) return undefined as unknown as null; // trigger notFound()
+  if (!res.ok) throw new Error(`Failed to fetch ticket ${id}: ${res.status}`);
+
+  return res.json();
+}
+
 export default async function TicketDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const ticket = await getTicketById(Number(id));
+  const ticket = await fetchTicket(Number(id));
 
-  if (!ticket) {
-    notFound();
-  }
+  if (ticket === null) redirect("/login");
+  if (!ticket) notFound();
 
   return (
     <div className="flex h-full flex-col">
