@@ -1,0 +1,53 @@
+services:
+
+  # ---------------------------------------------------------------------------
+  # Django Backend
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./deskpro-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_ENV=dev
+    volumes:
+      # Mount source for hot reload
+      - ./deskpro-backend:/app
+      # Preserve .venv inside the container (not overwritten by the host mount)
+      - backend_venv:/app/.venv
+    # .env.dev must exist on the host (copy from .env.example and fill in values)
+    # It is included automatically via the volume mount above.
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Next.js Frontend
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./Frontend/frontendnext
+    ports:
+      - "3000:3000"
+    environment:
+      # NEXT_PUBLIC_API_URL is used by client-side (browser) components.
+      # Keep it pointing at localhost so the browser can reach the backend.
+      - NEXT_PUBLIC_API_URL=http://localhost:8000/api
+      # BACKEND_URL is used by Next.js server components (SSR).
+      # Uses the Docker service name for container-to-container communication.
+      - BACKEND_URL=http://backend:8000/api
+    volumes:
+      # Mount source for hot reload
+      - ./Frontend/frontendnext:/app
+      # Preserve node_modules and .next inside the container
+      - frontend_node_modules:/app/node_modules
+      - frontend_next:/app/.next
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+# ---------------------------------------------------------------------------
+# Named volumes (persist across container restarts)
+# ---------------------------------------------------------------------------
+volumes:
+  backend_venv:
+  frontend_node_modules:
+  frontend_next:

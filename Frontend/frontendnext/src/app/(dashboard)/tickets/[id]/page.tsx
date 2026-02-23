@@ -7,8 +7,13 @@ import { TicketSidebar } from "@/components/ticket-sidebar";
 import { ReplyEditor } from "@/components/reply-editor";
 import { Ticket, TicketChannel } from "@/types/ticket";
 
+// Server components: prefer BACKEND_URL (Docker internal service name) so
+// container-to-container requests don't leave the Docker network.
+// Falls back to NEXT_PUBLIC_API_URL for local dev without Docker.
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+  process.env.BACKEND_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://localhost:8000/api";
 
 const channelIcons: Record<TicketChannel, React.ReactNode> = {
   email: <Mail className="h-4 w-4" />,
